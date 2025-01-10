@@ -182,6 +182,7 @@ public:
     int window_title_height() const { return metric(MetricRole::TitleHeight); }
     int window_title_button_width() const { return metric(MetricRole::TitleButtonWidth); }
     int window_title_button_height() const { return metric(MetricRole::TitleButtonHeight); }
+    int window_title_button_inactive_alpha() const { return metric(MetricRole::TitleButtonInactiveAlpha); }
 
     ByteString title_button_icons_path() const { return path(PathRole::TitleButtonIcons); }
     ByteString active_window_shadow_path() const { return path(PathRole::ActiveWindowShadow); }
@@ -196,6 +197,7 @@ public:
     bool flag(FlagRole role) const { return m_impl->flag(role); }
     int metric(MetricRole role) const { return m_impl->metric(role); }
     ByteString path(PathRole role) const { return m_impl->path(role); }
+    Gfx::WindowThemeProvider window_theme_provider(WindowThemeRole role) const { return m_impl->window_theme_provider(role); }
 
     void set_color(ColorRole, Color);
     void set_alignment(AlignmentRole, Gfx::TextAlignment);

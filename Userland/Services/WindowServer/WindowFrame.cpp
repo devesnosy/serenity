@@ -160,7 +160,6 @@ void WindowFrame::reload_config()
         StringBuilder full_path;
         full_path.append(icons_path);
         full_path.append(path);
-        dbgln("Reloading buitmap {}", full_path.string_view());
         if (multiscale_bitmap)
             multiscale_bitmap->load(full_path.string_view(), default_path);
         else
@@ -670,7 +669,7 @@ void WindowFrame::window_rect_changed(Gfx::IntRect const& old_rect, Gfx::IntRect
 
 void WindowFrame::layout_buttons()
 {
-    auto button_rects = current_window_theme().layout_buttons(to_theme_window_type(m_window.type()), to_theme_window_mode(m_window.mode()), m_window.rect(), WindowManager::the().palette(), m_buttons.size());
+    auto button_rects = current_window_theme().layout_buttons(to_theme_window_type(m_window.type()), to_theme_window_mode(m_window.mode()), m_window.rect(), WindowManager::the().palette(), m_buttons.size(), m_window.is_maximized());
     for (size_t i = 0; i < m_buttons.size(); i++)
         m_buttons[i]->set_relative_rect(button_rects[i]);
 }

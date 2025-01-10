@@ -70,11 +70,10 @@ template<FloatingPoint FloatT>
 FloatT copysign(FloatT x, FloatT y)
 {
     using Extractor = FloatExtractor<FloatT>;
-    Extractor ex, ey;
-    ex.d = x;
-    ey.d = y;
+    auto ex = Extractor::from_float(x);
+    auto ey = Extractor::from_float(y);
     ex.sign = ey.sign;
-    return ex.d;
+    return ex.to_float();
 }
 
 #define CONSTEXPR_STATE(function, args...)        \
@@ -220,6 +219,30 @@ constexpr T rint(T x)
 #    endif
 #elif ARCH(AARCH64)
     AARCH64_INSTRUCTION(frintx, x);
+#elif ARCH(RISCV64)
+    if (__builtin_isnan(x))
+        return x;
+
+    // Floating point values have a gap size of >= 1 for values above 2^mantissa_bits - 1.
+    if (fabs(x) > FloatExtractor<T>::mantissa_max)
+        return x;
+
+    if constexpr (IsSame<T, float>) {
+        i64 r;
+        asm("fcvt.l.s %0, %1, dyn"
+            : "=r"(r)
+            : "f"(x));
+        return copysign(static_cast<float>(r), x);
+    }
+    if constexpr (IsSame<T, double>) {
+        i64 r;
+        asm("fcvt.l.d %0, %1, dyn"
+            : "=r"(r)
+            : "f"(x));
+        return copysign(static_cast<double>(r), x);
+    }
+    if constexpr (IsSame<T, long double>)
+        TODO_RISCV64();
 #endif
     TODO();
 }
@@ -451,11 +474,11 @@ constexpr T fmod(T x, T y)
     // If y_exponent < x_exponent, we'll iteratively reduce x_exponent by shifting from
     // the exponent into the mantissa.
 
-    FloatExtractor<T> x_bits { .d = x };
-    typename FloatExtractor<T>::ComponentType x_exponent = x_bits.exponent; // - FloatExtractor<T>::exponent_bias;
+    auto x_bits = FloatExtractor<T>::from_float(x);
+    typename FloatExtractor<T>::ComponentType x_exponent = x_bits.exponent;
 
-    FloatExtractor<T> y_bits { .d = y };
-    typename FloatExtractor<T>::ComponentType y_exponent = y_bits.exponent; // - FloatExtractor<T>::exponent_bias;
+    auto y_bits = FloatExtractor<T>::from_float(y);
+    typename FloatExtractor<T>::ComponentType y_exponent = y_bits.exponent;
 
     // FIXME: Handle denormals. For now, treat them as 0.
     if (x_exponent == 0 && y_exponent != 0)
@@ -499,7 +522,7 @@ constexpr T fmod(T x, T y)
 
     x_bits.exponent = x_exponent;
     x_bits.mantissa = x_mantissa;
-    return x_bits.d;
+    return x_bits.to_float();
 #    else
     if constexpr (IsSame<T, long double>)
         return __builtin_fmodl(x, y);
@@ -571,7 +594,28 @@ constexpr T sqrt(T x)
     return res;
 #elif ARCH(AARCH64)
     AARCH64_INSTRUCTION(fsqrt, x);
+#elif ARCH(RISCV64)
+    if constexpr (IsSame<T, float>) {
+        float res;
+        asm("fsqrt.s %0, %1"
+            : "=f"(res)
+            : "f"(x));
+        return res;
+    }
+    if constexpr (IsSame<T, double>) {
+        double res;
+        asm("fsqrt.d %0, %1"
+            : "=f"(res)
+            : "f"(x));
+        return res;
+    }
+    if constexpr (IsSame<T, long double>)
+        TODO_RISCV64();
 #else
+#    if defined(AK_OS_SERENITY)
+    // TODO: Add implementation for this function.
+    TODO();
+#    endif
     return __builtin_sqrt(x);
 #endif
 }
@@ -921,7 +965,7 @@ constexpr T log2(T x)
     if (x <= 0 || __builtin_isnan(x))
         return NaN<T>;
 
-    FloatExtractor<T> ext { .d = x };
+    auto ext = FloatExtractor<T>::from_float(x);
     T exponent = ext.exponent - FloatExtractor<T>::exponent_bias;
 
     // When the mantissa shows 0b00 (implicitly 1.0) we are on a power of 2
@@ -937,7 +981,7 @@ constexpr T log2(T x)
     };
 
     // (1 <= mantissa < 2)
-    T m = mantissa_ext.d;
+    T m = mantissa_ext.to_float();
 
     // This is a reconstruction of one of Sun's algorithms
     // They use a transformation to lower the problem space,

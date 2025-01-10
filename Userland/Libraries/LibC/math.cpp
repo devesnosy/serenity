@@ -73,8 +73,7 @@ static FloatType internal_to_integer(FloatType x, RoundingMode rounding_mode)
     // Most component types are larger than int.
     constexpr auto zero = static_cast<Extractor::ComponentType>(0);
     constexpr auto one = static_cast<Extractor::ComponentType>(1);
-    Extractor extractor;
-    extractor.d = x;
+    auto extractor = Extractor::from_float(x);
 
     auto unbiased_exponent = extractor.exponent - Extractor::exponent_bias;
 
@@ -132,16 +131,18 @@ static FloatType internal_to_integer(FloatType x, RoundingMode rounding_mode)
         break;
     }
 
+    auto result = extractor.to_float();
+
     if (should_round) {
         // We could do this ourselves, but this saves us from manually
         // handling overflow.
         if (extractor.sign)
-            extractor.d -= static_cast<FloatType>(1.0);
+            result -= static_cast<FloatType>(1.0);
         else
-            extractor.d += static_cast<FloatType>(1.0);
+            result += static_cast<FloatType>(1.0);
     }
 
-    return extractor.d;
+    return result;
 }
 
 // This is much branchier than it really needs to be
@@ -151,22 +152,21 @@ static FloatType internal_nextafter(FloatType x, bool up)
     if (!isfinite(x))
         return x;
     using Extractor = FloatExtractor<decltype(x)>;
-    Extractor extractor;
-    extractor.d = x;
+    auto extractor = Extractor::from_float(x);
     if (x == 0) {
         if (!extractor.sign) {
             extractor.mantissa = 1;
             extractor.sign = !up;
-            return extractor.d;
+            return extractor.to_float();
         }
         if (up) {
             extractor.sign = false;
             extractor.mantissa = 1;
-            return extractor.d;
+            return extractor.to_float();
         }
         extractor.mantissa = 1;
         extractor.sign = up != extractor.sign;
-        return extractor.d;
+        return extractor.to_float();
     }
     if (up != extractor.sign) {
         extractor.mantissa++;
@@ -179,22 +179,21 @@ static FloatType internal_nextafter(FloatType x, bool up)
                 extractor.mantissa = Extractor::mantissa_max;
             }
         }
-        return extractor.d;
+        return extractor.to_float();
     }
 
     if (!extractor.mantissa) {
         if (extractor.exponent) {
             extractor.exponent--;
             extractor.mantissa = Extractor::mantissa_max;
-        } else {
-            extractor.d = 0;
+            return extractor.to_float();
         }
-        return extractor.d;
+        return 0;
     }
 
     extractor.mantissa--;
     if (extractor.mantissa != Extractor::mantissa_max)
-        return extractor.d;
+        return extractor.to_float();
     if (extractor.exponent) {
         extractor.exponent--;
         // normalize
@@ -206,7 +205,7 @@ static FloatType internal_nextafter(FloatType x, bool up)
             extractor.exponent = Extractor::exponent_max;
         }
     }
-    return extractor.d;
+    return extractor.to_float();
 }
 
 template<typename FloatT>
@@ -223,8 +222,7 @@ static int internal_ilogb(FloatT x) NOEXCEPT
 
     using Extractor = FloatExtractor<FloatT>;
 
-    Extractor extractor;
-    extractor.d = x;
+    auto extractor = Extractor::from_float(x);
 
     return (int)extractor.exponent - Extractor::exponent_bias;
 }
@@ -247,12 +245,11 @@ static FloatT internal_scalbn(FloatT x, int exponent) NOEXCEPT
         return x;
 
     using Extractor = FloatExtractor<FloatT>;
-    Extractor extractor;
-    extractor.d = x;
+    auto extractor = Extractor::from_float(x);
 
     if (extractor.exponent != 0) {
         extractor.exponent = clamp((int)extractor.exponent + exponent, 0, (int)Extractor::exponent_max);
-        return extractor.d;
+        return extractor.to_float();
     }
 
     unsigned leading_mantissa_zeroes = extractor.mantissa == 0 ? 32 : count_leading_zeroes(extractor.mantissa);
@@ -262,7 +259,7 @@ static FloatT internal_scalbn(FloatT x, int exponent) NOEXCEPT
     extractor.exponent <<= shift;
     extractor.exponent = exponent + 1;
 
-    return extractor.d;
+    return extractor.to_float();
 }
 
 template<typename FloatT>
@@ -359,6 +356,7 @@ MAKE_AK_BACKED1(log10);
 MAKE_AK_BACKED1(exp);
 MAKE_AK_BACKED1(exp2);
 MAKE_AK_BACKED1(fabs);
+MAKE_AK_BACKED1(rint);
 
 MAKE_AK_BACKED2(atan2);
 MAKE_AK_BACKED2(hypot);
@@ -434,72 +432,6 @@ float truncf(float x) NOEXCEPT
 #endif
 
     return internal_to_integer(x, RoundingMode::ToZero);
-}
-
-long double rintl(long double value)
-{
-#if ARCH(AARCH64)
-    (void)value;
-    TODO_AARCH64();
-#elif ARCH(RISCV64)
-    (void)value;
-    TODO_RISCV64();
-#elif ARCH(X86_64)
-    long double res;
-    asm(
-        "frndint\n"
-        : "=t"(res)
-        : "0"(value));
-    return res;
-#else
-#    error "Unknown architecture"
-#endif
-}
-double rint(double value)
-{
-#if ARCH(AARCH64)
-    (void)value;
-    TODO_AARCH64();
-#elif ARCH(RISCV64)
-    i64 output;
-    // FIXME: This saturates at 64-bit integer boundaries; see Table 11.4 (RISC-V Unprivileged ISA V20191213)
-    asm("fcvt.l.d %0, %1, dyn"
-        : "=r"(output)
-        : "f"(value));
-    return static_cast<double>(output);
-#elif ARCH(X86_64)
-    double res;
-    asm(
-        "frndint\n"
-        : "=t"(res)
-        : "0"(value));
-    return res;
-#else
-#    error "Unknown architecture"
-#endif
-}
-float rintf(float value)
-{
-#if ARCH(AARCH64)
-    (void)value;
-    TODO_AARCH64();
-#elif ARCH(RISCV64)
-    i64 output;
-    // FIXME: This saturates at 64-bit integer boundaries; see Table 11.4 (RISC-V Unprivileged ISA V20191213)
-    asm("fcvt.l.s %0, %1, dyn"
-        : "=r"(output)
-        : "f"(value));
-    return static_cast<float>(output);
-#elif ARCH(X86_64)
-    float res;
-    asm(
-        "frndint\n"
-        : "=t"(res)
-        : "0"(value));
-    return res;
-#else
-#    error "Unknown architecture"
-#endif
 }
 
 long lrintl(long double value)
